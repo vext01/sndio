@@ -1,0 +1,125 @@
+Index: dev/audio.c
+===================================================================
+RCS file: /cvs/src/sys/dev/audio.c,v
+diff -u -p -r1.206 audio.c
+--- dev/audio.c	10 Feb 2023 14:34:16 -0000	1.206
++++ dev/audio.c	9 Feb 2024 20:54:15 -0000
+@@ -1735,6 +1735,11 @@ audio_getdev(struct audio_softc *sc, str
+ 	if (sc->dev.dv_parent == NULL)
+ 		return EIO;
+ 	strlcpy(adev->name, sc->dev.dv_parent->dv_xname, MAX_AUDIO_DEV_LEN);
++	if (sc->ops->display != NULL)
++		sc->ops->display(sc->arg, adev->display, MAX_AUDIO_DISPLAY_LEN);
++	else
++		strlcpy(adev->display, sc->dev.dv_parent->dv_xname,
++		    MAX_AUDIO_DISPLAY_LEN);
+ 	return 0;
+ }
+ 
+Index: dev/audio_if.h
+===================================================================
+RCS file: /cvs/src/sys/dev/audio_if.h,v
+diff -u -p -r1.42 audio_if.h
+--- dev/audio_if.h	2 Nov 2022 10:41:34 -0000	1.42
++++ dev/audio_if.h	9 Feb 2024 20:54:15 -0000
+@@ -125,6 +125,8 @@ struct audio_hw_if {
+ 	    struct audio_params *, struct audio_params *, unsigned int);
+ 	unsigned int (*set_nblks)(void *, int,
+ 	    struct audio_params *, unsigned int, unsigned int);
++
++	void	(*display)(void*, char *, size_t);
+ };
+ 
+ struct audio_attach_args {
+Index: dev/pci/azalia.c
+===================================================================
+RCS file: /cvs/src/sys/dev/pci/azalia.c,v
+diff -u -p -r1.285 azalia.c
+--- dev/pci/azalia.c	23 Nov 2023 14:24:06 -0000	1.285
++++ dev/pci/azalia.c	9 Feb 2024 20:54:15 -0000
+@@ -256,6 +256,7 @@ unsigned int azalia_set_blksz(void *, in
+ 	struct audio_params *, struct audio_params *, unsigned int);
+ unsigned int azalia_set_nblks(void *, int,
+ 	struct audio_params *, unsigned int, unsigned int);
++void	azalia_display(void *, char *, size_t);
+ int	azalia_halt_output(void *);
+ int	azalia_halt_input(void *);
+ int	azalia_set_port(void *, mixer_ctrl_t *);
+@@ -304,6 +305,7 @@ const struct audio_hw_if azalia_hw_if = 
+ 	.trigger_input = azalia_trigger_input,
+ 	.set_blksz = azalia_set_blksz,
+ 	.set_nblks = azalia_set_nblks,
++	.display = azalia_display,
+ };
+ 
+ static const char *pin_devices[16] = {
+@@ -4027,6 +4029,20 @@ azalia_set_nblks(void *v, int mode,
+ 		nblks = HDA_BDL_MAX;
+ 
+ 	return nblks;
++}
++
++void
++azalia_display(void *arg, char *display, size_t len)
++{
++	azalia_t *az = arg;
++	const char *vendor, *product;
++
++	vendor = pci_findvendor(az->pciid);
++	if (vendor != NULL) {
++		product = pci_findproduct(az->pciid);
++		snprintf(display, len, "%s %s", vendor, product);
++	} else
++		snprintf(display, len, "%s", XNAME(az));
+ }
+ 
+ int
+Index: dev/usb/uaudio.c
+===================================================================
+RCS file: /cvs/src/sys/dev/usb/uaudio.c,v
+diff -u -p -r1.174 uaudio.c
+--- dev/usb/uaudio.c	10 Dec 2023 06:32:14 -0000	1.174
++++ dev/usb/uaudio.c	9 Feb 2024 20:54:15 -0000
+@@ -430,6 +430,7 @@ int uaudio_halt_input(void *);
+ int uaudio_query_devinfo(void *, struct mixer_devinfo *);
+ int uaudio_get_port(void *, struct mixer_ctrl *);
+ int uaudio_set_port(void *, struct mixer_ctrl *);
++void uaudio_display(void *, char *, size_t);
+ 
+ int uaudio_process_unit(struct uaudio_softc *,
+     struct uaudio_unit *, int,
+@@ -481,7 +482,15 @@ const struct audio_hw_if uaudio_hw_if = 
+ 	.copy_output = uaudio_copy_output,
+ 	.underrun = uaudio_underrun,
+ 	.set_blksz = uaudio_set_blksz,
++	.display = uaudio_display,
+ };
++
++void
++uaudio_display(void *arg, char *display, size_t len)
++{
++	struct uaudio_softc *sc = arg;
++	snprintf(display, len, "%s %s", sc->udev->vendor, sc->udev->product);
++}
+ 
+ /*
+  * To keep things simple, we support only the following rates, we
+Index: sys/audioio.h
+===================================================================
+RCS file: /cvs/src/sys/sys/audioio.h,v
+diff -u -p -r1.27 audioio.h
+--- sys/audioio.h	14 Sep 2016 06:12:20 -0000	1.27
++++ sys/audioio.h	9 Feb 2024 21:06:06 -0000
+@@ -76,10 +76,10 @@ struct audio_status {
+  * audio devices.
+  */
+ #define MAX_AUDIO_DEV_LEN	16
++#define MAX_AUDIO_DISPLAY_LEN	32
+ typedef struct audio_device {
+ 	char name[MAX_AUDIO_DEV_LEN];
+-	char version[MAX_AUDIO_DEV_LEN];
+-	char config[MAX_AUDIO_DEV_LEN];
++	char display[MAX_AUDIO_DISPLAY_LEN]; /* human-readable display string */
+ } audio_device_t;
+ 
+ struct audio_pos {

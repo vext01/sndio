@@ -175,7 +175,7 @@ init(struct sioctl_sun_hdl *hdl)
 	if (ioctl(hdl->fd, AUDIO_GETDEV, &getdev) == -1)
 		strlcpy(hdl->display, "unknown", SIOCTL_DISPLAYMAX);
 	else
-		strlcpy(hdl->display, getdev.name, SIOCTL_DISPLAYMAX);
+		strlcpy(hdl->display, getdev.display, SIOCTL_DISPLAYMAX);
 	DPRINTF("init: server.device: display = %s\n", hdl->display);
 }
 
