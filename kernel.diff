@@ -4,16 +4,16 @@ RCS file: /cvs/src/sys/dev/audio.c,v
 retrieving revision 1.204
 diff -u -p -r1.204 audio.c
 --- dev/audio.c	2 Nov 2022 10:41:34 -0000	1.204
-+++ dev/audio.c	10 Nov 2022 16:53:17 -0000
++++ dev/audio.c	15 Nov 2022 20:55:30 -0000
 @@ -1735,6 +1735,11 @@ audio_getdev(struct audio_softc *sc, str
  	if (sc->dev.dv_parent == NULL)
  		return EIO;
  	strlcpy(adev->name, sc->dev.dv_parent->dv_xname, MAX_AUDIO_DEV_LEN);
-+	if (sc->ops->descr != NULL)
-+		sc->ops->descr(sc->arg, adev->descr, MAX_AUDIO_DESCR_LEN);
++	if (sc->ops->display != NULL)
++		sc->ops->display(sc->arg, adev->display, MAX_AUDIO_DISPLAY_LEN);
 +	else
-+		strlcpy(adev->descr, sc->dev.dv_parent->dv_xname,
-+		    MAX_AUDIO_DESCR_LEN);
++		strlcpy(adev->display, sc->dev.dv_parent->dv_xname,
++		    MAX_AUDIO_DISPLAY_LEN);
  	return 0;
  }
  
@@ -23,13 +23,13 @@ RCS file: /cvs/src/sys/dev/audio_if.h,v
 retrieving revision 1.42
 diff -u -p -r1.42 audio_if.h
 --- dev/audio_if.h	2 Nov 2022 10:41:34 -0000	1.42
-+++ dev/audio_if.h	10 Nov 2022 16:53:17 -0000
++++ dev/audio_if.h	15 Nov 2022 21:02:14 -0000
 @@ -125,6 +125,8 @@ struct audio_hw_if {
  	    struct audio_params *, struct audio_params *, unsigned int);
  	unsigned int (*set_nblks)(void *, int,
  	    struct audio_params *, unsigned int, unsigned int);
 +
-+	void	(*descr)(void*, char *, size_t); /* the device's description */
++	void	(*display)(void*, char *, size_t);
  };
  
  struct audio_attach_args {
@@ -39,12 +39,12 @@ RCS file: /cvs/src/sys/dev/pci/azalia.c,v
 retrieving revision 1.281
 diff -u -p -r1.281 azalia.c
 --- dev/pci/azalia.c	5 Nov 2022 00:12:39 -0000	1.281
-+++ dev/pci/azalia.c	15 Nov 2022 20:49:00 -0000
++++ dev/pci/azalia.c	15 Nov 2022 20:56:40 -0000
 @@ -256,6 +256,7 @@ unsigned int azalia_set_blksz(void *, in
  	struct audio_params *, struct audio_params *, unsigned int);
  unsigned int azalia_set_nblks(void *, int,
  	struct audio_params *, unsigned int, unsigned int);
-+void	azalia_descr(void *, char *, size_t);
++void	azalia_display(void *, char *, size_t);
  int	azalia_halt_output(void *);
  int	azalia_halt_input(void *);
  int	azalia_set_port(void *, mixer_ctrl_t *);
@@ -52,7 +52,7 @@ diff -u -p -r1.281 azalia.c
  	.trigger_input = azalia_trigger_input,
  	.set_blksz = azalia_set_blksz,
  	.set_nblks = azalia_set_nblks,
-+	.descr = azalia_descr,
++	.display = azalia_display,
  };
  
  static const char *pin_devices[16] = {
@@ -63,7 +63,7 @@ diff -u -p -r1.281 azalia.c
 +}
 +
 +void
-+azalia_descr(void *arg, char *descr, size_t len)
++azalia_display(void *arg, char *display, size_t len)
 +{
 +	azalia_t *az = arg;
 +	const char *vendor, *product;
@@ -71,9 +71,9 @@ diff -u -p -r1.281 azalia.c
 +	vendor = pci_findvendor(az->pciid);
 +	if (vendor != NULL) {
 +		product = pci_findproduct(az->pciid);
-+		snprintf(descr, len, "%s %s", vendor, product);
++		snprintf(display, len, "%s %s", vendor, product);
 +	} else
-+		snprintf(descr, len, "%s", XNAME(az));
++		snprintf(display, len, "%s", XNAME(az));
  }
  
  int
@@ -83,12 +83,12 @@ RCS file: /cvs/src/sys/dev/usb/uaudio.c,v
 retrieving revision 1.172
 diff -u -p -r1.172 uaudio.c
 --- dev/usb/uaudio.c	26 Oct 2022 20:19:09 -0000	1.172
-+++ dev/usb/uaudio.c	10 Nov 2022 16:53:17 -0000
++++ dev/usb/uaudio.c	15 Nov 2022 21:00:38 -0000
 @@ -430,6 +430,7 @@ int uaudio_halt_input(void *);
  int uaudio_query_devinfo(void *, struct mixer_devinfo *);
  int uaudio_get_port(void *, struct mixer_ctrl *);
  int uaudio_set_port(void *, struct mixer_ctrl *);
-+void uaudio_descr(void *, char *, size_t);
++void uaudio_display(void *, char *, size_t);
  
  int uaudio_process_unit(struct uaudio_softc *,
      struct uaudio_unit *, int,
@@ -96,14 +96,14 @@ diff -u -p -r1.172 uaudio.c
  	.copy_output = uaudio_copy_output,
  	.underrun = uaudio_underrun,
  	.set_blksz = uaudio_set_blksz,
-+	.descr = uaudio_descr,
++	.display = uaudio_display,
  };
 +
 +void
-+uaudio_descr(void *arg, char *descr, size_t len)
++uaudio_display(void *arg, char *display, size_t len)
 +{
 +	struct uaudio_softc *sc = arg;
-+	snprintf(descr, len, "%s %s", sc->udev->vendor, sc->udev->product);
++	snprintf(display, len, "%s %s", sc->udev->vendor, sc->udev->product);
 +}
  
  /*
@@ -114,17 +114,22 @@ RCS file: /cvs/src/sys/sys/audioio.h,v
 retrieving revision 1.27
 diff -u -p -r1.27 audioio.h
 --- sys/audioio.h	14 Sep 2016 06:12:20 -0000	1.27
-+++ sys/audioio.h	10 Nov 2022 16:53:17 -0000
-@@ -76,10 +76,10 @@ struct audio_status {
++++ sys/audioio.h	15 Nov 2022 21:00:01 -0000
+@@ -76,10 +76,15 @@ struct audio_status {
   * audio devices.
   */
  #define MAX_AUDIO_DEV_LEN	16
-+#define MAX_AUDIO_DESCR_LEN	32
++#define MAX_AUDIO_DISPLAY_LEN	32
  typedef struct audio_device {
  	char name[MAX_AUDIO_DEV_LEN];
 -	char version[MAX_AUDIO_DEV_LEN];
 -	char config[MAX_AUDIO_DEV_LEN];
-+	char descr[MAX_AUDIO_DESCR_LEN]; /* device description string */
++	/*
++	 * The device's human-readable display string.
++	 *
++	 * XXX: this could do with being longer, but will require an ABI bump.
++	 */
++	char display[MAX_AUDIO_DISPLAY_LEN];
  } audio_device_t;
  
  struct audio_pos {

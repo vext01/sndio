@@ -175,19 +175,11 @@ init(struct sioctl_sun_hdl *hdl)
 	if (ioctl(hdl->fd, AUDIO_GETDEV, &getdev) == -1)
 		strlcpy(hdl->display, "unknown", SIOCTL_NAMEMAX);
 	else {
-		/*
-		 * XXX: For now we only put the device name in the display
-		 * string.
-		 *
-		 * When we feel brave enough, let's make the device description
-		 * string longer in the kernel, and the display string longer
-		 * in userspace, and then prefix the userspace display string
-		 * with the driver name, like this:
-		 *
-		 * snprintf(hdl->display, SIOCTL_NAMEMAX, "%s: %s",
-		 *    getdev.name, getdev.descr);
-		 */
-		strlcpy(hdl->display, getdev.descr, SIOCTL_NAMEMAX);
+          /*
+           * XXX: hdl->display could do with being longer, but this will
+           * require an ABI bump.
+           */
+          strlcpy(hdl->display, getdev.display, SIOCTL_NAMEMAX);
 	}
 	DPRINTF("init: server.device: display = %s\n", hdl->display);
 }
